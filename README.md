@@ -26,7 +26,7 @@ The statprof library exports the following three procedures:
   -- End the profiling
 
 (write-profile-report &lt;profile-dir&gt;)
-  -- Write the profiling results in HTML files in the directory &lt;profile-dir&gt; (relative to the current directory).  To view the results open the file &lt;profile-dir&gt/index.html .
+  -- Write the profiling results in HTML files in the directory &lt;profile-dir&gt; (relative to the current directory).  To view the results open the file &lt;profile-dir&gt;/index.html .
 
 See the file demo.sld for a simple demo of how to use this library.  The demo can be run with the command
 
