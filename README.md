@@ -17,20 +17,20 @@ When looking at the output, you can see a first column with the line number, the
 
 ## Usage
 
-You use it with the following three functions:
+The statprof library exports the following three procedures:
 
 (profile-start!)
-  -- begin the profiling
+  -- Begin the profiling
 
 (profile-stop!)
-  -- end the profiling
+  -- End the profiling
 
-(write-profile-report <profile-dir>)
-  -- output the data (annotated source) in HTML files in a
-     <profile-dir> sub-directory created in the current directory.
+(write-profile-report &lt;profile-dir&gt;)
+  -- Write the profiling results in HTML files in the directory &lt;profile-dir&gt; (relative to the current directory).  To view the results open the file &lt;profile-dir&gt/index.html .
 
+See the file demo.sld for a simple demo of how to use this library.  The demo can be run with the command
 
-See the file demo.sld for a simple demo of how to use this library.
+    gsi github.com/gambit/statprof/demo
 
 ## License
 
