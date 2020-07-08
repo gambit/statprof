@@ -31,11 +31,14 @@
   (set! *buckets* (make-table))
   (set! *total* 0)
   (set! *heartbeat-count* 0)
-  (##interrupt-vector-set! 2 profile-heartbeat!)) ;; ___INTR_HEARTBEAT
+  (heartbeat-interrupt-handler-set! profile-heartbeat!))
 
 (define (profile-stop!)
-  (##interrupt-vector-set! 2 ##thread-heartbeat!) ;; ___INTR_HEARTBEAT
+  (heartbeat-interrupt-handler-set! ##thread-heartbeat!)
   (profile-add! #f))
+
+(define (heartbeat-interrupt-handler-set! thunk)
+  (##interrupt-vector-set! 2 thunk)) ;; 2 = ___INTR_HEARTBEAT
 
 (define (identify-continuation cont)
   (let loop ((cont cont))
@@ -132,11 +135,135 @@
 ;; ----------------------------------------------------------------------------
 ;; Functions to generate the report
 
-(define (write-profile-report profile-dir)
+(define (write-profile-report profile-dir #!optional (context 10))
 
   (define buckets (table->list *buckets*))
 
   (define output-dir (path-expand profile-dir))
+
+  (define (generate-result-file-for-bucket bucket max-intensity)
+    (let ((file (car bucket))
+          (data (vector-copy (cdr bucket))))
+
+      (define (get-color n)
+        (let ((i (vector-ref data n)))
+          (if (= i 0)
+              (as-rgb (vector-ref palette 0))
+              (let ((x
+                     (if (<= max-intensity 1)
+                         0
+                         (* (/ (log (+ 1. i))
+                               (ceiling (log max-intensity)))
+                            (- (vector-length palette) 1)))))
+                (as-rgb (vector-ref palette
+                                    (inexact->exact (ceiling x))))))))
+
+      (define (remove-out-of-context)
+        (let loop ((i (- context))
+                   (cont (+ context 1))
+                   (start-of-prev-removed #f))
+
+          (define (possibly-undo-prev-remove i)
+            (let ((i-1 (- i 1)))
+              (if (and start-of-prev-removed
+                       (>= i-1 0)
+                       (= (max 0 start-of-prev-removed) i-1))
+                  (vector-set! data i-1 0))))
+
+          (if (< i (vector-length data))
+              (let ((remove? (>= cont context)))
+                (if remove?
+                    (if (>= i 0) (vector-set! data i #f))
+                    (possibly-undo-prev-remove i))
+                (loop (+ i 1)
+                      (let ((j (+ i context 2)))
+                        (if (and (< j (vector-length data))
+                                 (> (vector-ref data j) 0))
+                            (- (+ context 1))
+                            (+ cont 1)))
+                      (and remove?
+                           (or start-of-prev-removed i))))
+              (possibly-undo-prev-remove i))))
+
+      (define (generate-table-rows lines)
+        (let ((nlines (length lines)))
+
+          (define (ellision)
+            `(tr (td) (td) (td "...")))
+
+          (define (row i line)
+            (let ((line# (+ i 1)))
+              `(tr
+
+                (td
+                 align: right
+                 style: "padding-left: 5px; padding-right: 5px"
+                 ,(let ((n (vector-ref data line#)))
+                    (if (= n 0)
+                        ""
+                        `(strong
+                          ,(round% (/ n *total*))))))
+
+                (td ,(string-append
+                      (number->string line#)
+                      ": "))
+                ;; (td
+                ;;  align: center
+                ;;  ,(let ((n (vector-ref data line#)))
+                ;;     (if (= n 0)
+                ;;         ""
+                ;;         (string-append "["
+                ;;                        (number->string n)
+                ;;                        "/"
+                ;;                        (number->string *total*)
+                ;;                        "]"))))
+
+                (td (pre style: ,(string-append
+                                  "background-color:#"
+                                  (get-color line#))
+                         ,line)))))
+
+          (let loop ((i (- nlines 1))
+                     (end-of-removed #f)
+                     (lst (reverse lines))
+                     (rows '()))
+            (if (< i 0)
+                rows
+                (if (vector-ref data i)
+                    (loop (- i 1)
+                          #f
+                          (cdr lst)
+                          (cons (row i (car lst)) rows))
+                    (if end-of-removed
+                        (loop (- i 1)
+                              end-of-removed
+                              (cdr lst)
+                              rows)
+                        (loop (- i 1)
+                              i
+                              (cdr lst)
+                              (cons (ellision) rows))))))))
+
+      (remove-out-of-context)
+
+      (let ((html
+             (sexp->html
+              `(html
+                (body
+                 (table
+                  cellspacing: 0
+                  cellpadding: 0
+                  border: 0
+                  style: "font-size: 12px;"
+                  ,@(generate-table-rows
+                     (call-with-input-file file
+                       (lambda (p) (read-all p read-line))))))))))
+      (with-output-to-file (path-expand (string-append
+                                         (path-strip-directory file)
+                                         ".html")
+                                        output-dir)
+        (lambda ()
+          (print html))))))
 
   (with-exception-catcher
    (lambda (e)
@@ -148,84 +275,17 @@
      (create-directory (list path: output-dir
                              permissions: #o755))))
 
-    (if (> *total* 0)
-        (let ((max-intensity
-               (fold max
-                     0
-                     (map
-                      (lambda (data)
-                        (fold max 0 (vector->list data)))
-                      (map cdr buckets)))))
-          (map
-           (lambda (bucket)
-             (let ((file (car bucket))
-                   (data (cdr bucket)))
-
-               (define (get-color n)
-                 (let ((i (vector-ref data n)))
-                   (if (= i 0)
-                       (as-rgb (vector-ref palette 0))
-                       (let ((x
-                              (if (<= max-intensity 1)
-                                  0
-                                  (* (/ (log (+ 1. i))
-                                        (ceiling (log max-intensity)))
-                                     (- (vector-length palette) 1)))))
-                         (as-rgb (vector-ref palette
-                                             (inexact->exact (ceiling x))))))))
-
-               (with-output-to-file (path-expand (string-append
-                                                  (path-strip-directory file)
-                                                  ".html")
-                                                 output-dir)
-
-                 (lambda ()
-                   (let ((lines (call-with-input-file file
-                                  (lambda (p) (read-all p read-line)))))
-                     (print
-                      (sexp->html
-                       `(html
-                         (body
-                          (table
-                           cellspacing: 0
-                           cellpadding: 0
-                           border: 0
-                           style: "font-size: 12px;"
-                           ,@(map
-                              (lambda (line line#)
-                                `(tr
-                                  (td ,(string-append
-                                        (number->string line#)
-                                        ": "))
-                                  ;; (td
-                                  ;;  align: center
-                                  ;;  ,(let ((n (vector-ref data line#)))
-                                  ;;     (if (= n 0)
-                                  ;;         ""
-                                  ;;         (string-append "["
-                                  ;;                        (number->string n)
-                                  ;;                        "/"
-                                  ;;                        (number->string *total*)
-                                  ;;                        "]"))))
-
-                                  (td
-                                   align: center
-                                   ,(let ((n (vector-ref data line#)))
-                                      (if (= n 0)
-                                          ""
-                                          (string-append
-                                           (number->string
-                                            (round% (/ n *total*)))
-                                           "% "))))
-
-                                  (td (pre style: ,(string-append
-                                                    "background-color:#"
-                                                    (get-color line#))
-                                           ,line))))
-                              lines
-                              (iota (length lines) 1))))))))))))
-
-           buckets)))
+  (if (> *total* 0)
+      (let ((max-intensity
+             (fold max
+                   0
+                   (map
+                    (lambda (data)
+                      (fold max 0 (vector->list data)))
+                    (map cdr buckets)))))
+        (for-each (lambda (bucket)
+                    (generate-result-file-for-bucket bucket max-intensity))
+                  buckets)))
 
   (with-output-to-file (path-expand "index.html" output-dir)
     (lambda ()
@@ -247,13 +307,22 @@
                               ,(round%
                                 (/ (fold + 0 (vector->list (cdr bucket)))
                                    *total*))
-                              " %]")))
+                              "]")))
                       buckets)))))))))
 
 (define (round% n)
-  (/ (round
-      (* 10000 n))
-     100.))
+  (let* ((x
+          (number->string (exact (round (* 1000 n)))))
+         (y
+          (string-append (make-string (max 0 (- 2 (string-length x))) #\0)
+                         x))
+         (len
+          (string-length y)))
+    (string-append
+     (substring y 0 (- len 1))
+     "."
+     (substring y (- len 1) len)
+     "%")))
 
 
 ;; ----------------------------------------------------------------------------
