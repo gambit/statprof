@@ -11,9 +11,11 @@
 
 (define-library (statprof)
 
-  (export profile-start!
-          profile-stop!
-          write-profile-report)
+  (export statprof-start!
+          statprof-stop!
+          statprof-write!)
+
+  (import (gambit))
 
   (include "statprof.scm"))
 

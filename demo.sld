@@ -75,12 +75,12 @@
             (joes-challenge n m))
           (error "invalid number of threads")))
 
-    (profile-start!)
+    (statprof-start! '(profile flamegraph))
     (ring 10000)
-    (profile-stop!)
+    (statprof-stop!)
 
     (let ((output-dir "statprof-demo-profile"))
-      (write-profile-report output-dir)
+      (statprof-write! output-dir)
       (println "To view the profile open " output-dir "/index.html"))
 
     (println "Demo source code: " (this-source-file))))

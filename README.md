@@ -6,27 +6,29 @@ Gambit library for statistical profiling
 
 A statistical profiler is a program that will take snapshots of the state of another program at regular intervals to get information about where that program is spending its time.
 
-This particular statistical profiler works by using Gambit's interrupt handler to identify where the code was interrupted.
+This particular statistical profiler works by using Gambit's interrupt handler to identify where the code was interrupted.  It should not affect a program's performance by much.  It will work on multiple files.
 
-It generates an HTML version of the source code with colors added to indicate how often the code was interrupted in particular places, giving an idea of where time is spent in the code.
+In the default profile kind, an HTML version of the source code is generated with colors added to indicate how often the code was interrupted in particular places, giving an idea of where time is spent in the code.
 
-It should not affect a program's performance by much.  It will work on multiple files.
-
-When looking at the output, you can see a first column with the line number, then the second column is how many times the code was interrupted at that point out of how many interruptions.
+When looking at the output, you can see in the first column how often the code was interrupted at that point and the second column is the line number.  Lines with high interrupt counts are redish in color.
 
 
 ## Usage
 
 The statprof library exports the following three procedures:
 
-(profile-start!)
-  -- Begin the profiling
+(statprof-start! [&lt;kind&gt;])
+  -- Begin the profiling.  The optional &lt;kind&gt; parameter is a list
+     indicating the kind of profiles to generate.  The list can contain
+     the symbols `profile` (the default HTML profiles) and `flamegraph`
+     (which requires post-processing of the data with the  script
+     `flamegraph.pl` see https://github.com/brendangregg/FlameGraph).
 
-(profile-stop!)
+(statprof-stop!)
   -- End the profiling
 
-(write-profile-report &lt;profile-dir&gt;)
-  -- Write the profiling results in HTML files in the directory &lt;profile-dir&gt; (relative to the current directory).  To view the results open the file &lt;profile-dir&gt;/index.html .
+(statprof-write! &lt;profile-dir&gt;)
+  -- Write the profiling results to the directory &lt;profile-dir&gt; (relative to the current directory).  To view a profile generated with kind=`profile` open the file &lt;profile-dir&gt;/index.html .  The profile generated with kind=`flamegraph` is in &lt;profile-dir&gt;/flamegraph.folded .
 
 See the file demo.sld for a simple demo of how to use this library.  The demo can be run with the command
 

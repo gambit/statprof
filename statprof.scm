@@ -24,18 +24,21 @@
 ;; Profiling & interrupt handling
 
 (define *buckets* #f)
+(define *table-of-frames* #f)
 (define *total* 0)
-(define *heartbeat-count* 0)
+(define *profile?* #f)
+(define *flamegraph?* #f)
 
-(define (profile-start!)
+(define (statprof-start! #!optional (kind '(profile)))
+  (set! *profile?* (not (not (member 'profile kind))))
+  (set! *flamegraph?* (not (not (member 'flamegraph kind))))
   (set! *buckets* (make-table))
+  (set! *table-of-frames* (make-table))
   (set! *total* 0)
-  (set! *heartbeat-count* 0)
-  (heartbeat-interrupt-handler-set! profile-heartbeat!))
+  (heartbeat-interrupt-handler-set! statprof-heartbeat!))
 
-(define (profile-stop!)
-  (heartbeat-interrupt-handler-set! ##thread-heartbeat!)
-  (profile-add! #f))
+(define (statprof-stop!)
+  (heartbeat-interrupt-handler-set! ##thread-heartbeat!))
 
 (define (heartbeat-interrupt-handler-set! thunk)
   (##interrupt-vector-set! 2 thunk)) ;; 2 = ___INTR_HEARTBEAT
@@ -56,37 +59,50 @@
                      (loop (##continuation-next! cont))))
                (loop (##continuation-next! cont)))))))
 
-(define (profile-heartbeat!)
-  (set! *heartbeat-count* (fx+ 1 *heartbeat-count*))
-  (profile-add! #t))
+(define (continuation->frames cont)
+  (let loop ((cont cont) (lst '()))
+    (if (not cont)
+        lst
+        (if (##interesting-continuation? cont)
+            (let ((creator (##continuation-creator cont)))
+              (loop (##continuation-next! cont)
+                    (if creator
+                        (cons (##procedure-name creator) lst)
+                        lst)))
+            (loop (##continuation-next! cont)
+                  lst)))))
 
-(define (profile-add! heartbeat?)
+(define (statprof-heartbeat!)
   (continuation-capture
    (lambda (cont)
+     (let ((count 1))
 
-     (let ((id (identify-continuation cont)))
-       (if id
-           (let* ((file
-                   (vector-ref id 0))
-                  (bucket
-                   (or (table-ref *buckets* file #f)
-                       (let ((b (make-vector 20000 0))) ;; fixme length limit
-                         (table-set! *buckets* file b)
-                         b)))
-                  (line
-                   (vector-ref id 1)))
-             (if (fx< line (vector-length bucket))
-                 (begin
-                   (vector-set! bucket
-                                line
-                                (fx+ *heartbeat-count*
-                                     (vector-ref bucket line)))
-                   (set! *total* (fx+ *heartbeat-count* *total*))
-                   (set! *heartbeat-count* 0))))))
+       (if *profile?*
+           (let ((id (identify-continuation cont)))
+             (if id
+                 (let* ((file
+                         (vector-ref id 0))
+                        (bucket
+                         (or (table-ref *buckets* file #f)
+                             (let ((b (make-vector 20000 0))) ;; fixme length limit
+                               (table-set! *buckets* file b)
+                               b)))
+                        (line
+                         (vector-ref id 1)))
+                   (if (fx< line (vector-length bucket))
+                       (begin
+                         (vector-set! bucket
+                                      line
+                                      (fx+ count (vector-ref bucket line)))
+                         (set! *total* (fx+ count *total*))))))))
 
-     (if heartbeat?
-         (##thread-heartbeat!))))) ;; to allow thread context switching
+       (if *flamegraph?*
+           (let ((frames (continuation->frames cont)))
+             (table-set! *table-of-frames*
+                         frames
+                         (fx+ count (table-ref *table-of-frames* frames 0)))))
 
+       (##thread-heartbeat!))))) ;; to allow thread context switching
 
 ;; ----------------------------------------------------------------------------
 ;; Text formatting
@@ -135,18 +151,36 @@
 ;; ----------------------------------------------------------------------------
 ;; Functions to generate the report
 
-(define (write-profile-report profile-dir #!optional (context 10))
-
-  (define buckets (table->list *buckets*))
+(define (statprof-write! profile-dir #!optional (context 10))
 
   (define output-dir (path-expand profile-dir))
+
+  (with-exception-catcher
+   (lambda (e)
+     ;; ignore the exception, it probably means that the directory
+     ;; already existed.  If there's another problem it will be
+     ;; signaled later.
+     #f)
+   (lambda ()
+     (create-directory (list path: output-dir
+                             permissions: #o755))))
+
+  (if *profile?*
+      (profile-write! output-dir context))
+
+  (if *flamegraph?*
+      (flamegraph-write! output-dir)))
+
+(define (profile-write! output-dir context)
+
+  (define buckets (table->list *buckets*))
 
   (define (generate-result-file-for-bucket bucket max-intensity)
     (let ((file (car bucket))
           (data (vector-copy (cdr bucket))))
 
       (define (get-color n)
-        (let ((i (vector-ref data n)))
+        (let ((i (or (vector-ref data n) 0)))
           (if (= i 0)
               (as-rgb (vector-ref palette 0))
               (let ((x
@@ -198,7 +232,7 @@
                 (td
                  align: right
                  style: "padding-left: 5px; padding-right: 5px"
-                 ,(let ((n (vector-ref data line#)))
+                 ,(let ((n (or (vector-ref data line#) 0)))
                     (if (= n 0)
                         ""
                         `(strong
@@ -264,16 +298,6 @@
                                         output-dir)
         (lambda ()
           (print html))))))
-
-  (with-exception-catcher
-   (lambda (e)
-     ;; ignore the exception, it probably means that the directory
-     ;; already existed.  If there's another problem it will be
-     ;; signaled later.
-     #f)
-   (lambda ()
-     (create-directory (list path: output-dir
-                             permissions: #o755))))
 
   (if (> *total* 0)
       (let ((max-intensity
@@ -425,5 +449,29 @@
   ;; we rely on Gambit's flattening of list when printed with print
   (with-output-to-string (lambda ()
                            (print (open-tag exp)))))
+
+;; ----------------------------------------------------------------------------
+
+(define (flamegraph-write! output-dir)
+
+  (define (frames->string lst)
+    (append-strings (map symbol->string lst) ";"))
+
+  (let ((sorted-frames
+         (list-sort
+          string<=?
+          (map (lambda (x)
+                 (string-append (frames->string (car x))
+                                " "
+                                (number->string (cdr x))))
+               (table->list *table-of-frames*)))))
+    (call-with-output-file
+        (path-expand "flamegraph.folded" output-dir)
+     (lambda (port)
+       (for-each
+        (lambda (s)
+          (display s port)
+          (newline port))
+        sorted-frames)))))
 
 ;;;============================================================================
