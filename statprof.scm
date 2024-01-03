@@ -455,7 +455,7 @@
 (define (flamegraph-write! output-dir)
 
   (define (frames->string lst)
-    (append-strings (map symbol->string lst) ";"))
+    (string-concatenate (map symbol->string lst) ";"))
 
   (let ((sorted-frames
          (list-sort
