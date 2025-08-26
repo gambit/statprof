@@ -3,7 +3,7 @@
 ;;; File: "statprof.sld"
 
 ;;; Copyright (c) 2005 by Guillaume Germain, All Rights Reserved.
-;;; Copyright (c) 2020 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 2020-2025 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 

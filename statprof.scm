@@ -30,15 +30,19 @@
 (define *flamegraph?* #f)
 
 (define (statprof-start! #!optional (kind '(profile)))
-  (set! *profile?* (not (not (member 'profile kind))))
-  (set! *flamegraph?* (not (not (member 'flamegraph kind))))
+  (set! *profile?* (or (eq? *profile?* #t)
+                       (not (not (member 'profile kind)))))
+  (set! *flamegraph?* (or (eq? *flamegraph?* #t)
+                          (not (not (member 'flamegraph kind)))))
   (set! *buckets* (make-table))
   (set! *table-of-frames* (make-table))
   (set! *total* 0)
   (statprof-heartbeat-enable!))
 
 (define (statprof-stop!)
-  (statprof-heartbeat-disable!))
+  (statprof-heartbeat-disable!)
+  (set! *profile?* (and *profile?* '()))
+  (set! *flamegraph?* (and *flamegraph?* '())))
 
 (define (statprof-heartbeat-enable!)
   (declare (not interrupts-enabled))
@@ -164,25 +168,34 @@
 ;; ----------------------------------------------------------------------------
 ;; Functions to generate the report
 
-(define (statprof-write! profile-dir #!optional (context 10))
+(define (statprof-write! #!optional (profile-dir #f) (context 10))
+  (if (or *profile?* *flamegraph?*)
 
-  (define output-dir (path-expand profile-dir))
+      (let ((output-dir
+             (if profile-dir
+                 (path-expand profile-dir)
+                 (let ((prefix (or (command-name) "statprof")))
+                   (path-expand (string-append prefix ".statprof")
+                                (initial-current-directory))))))
 
-  (with-exception-catcher
-   (lambda (e)
-     ;; ignore the exception, it probably means that the directory
-     ;; already existed.  If there's another problem it will be
-     ;; signaled later.
-     #f)
-   (lambda ()
-     (create-directory (list path: output-dir
-                             permissions: #o755))))
+        (with-exception-catcher
+         (lambda (e)
+           ;; ignore the exception, it probably means that the directory
+           ;; already existed.  If there's another problem it will be
+           ;; signaled later.
+           #f)
+         (lambda ()
+           (create-directory (list path: output-dir
+                                   permissions: #o755))))
 
-  (if *profile?*
-      (profile-write! output-dir context))
+        (if *profile?*
+            (profile-write! output-dir context))
 
-  (if *flamegraph?*
-      (flamegraph-write! output-dir)))
+        (if *flamegraph?*
+            (flamegraph-write! output-dir))
+
+        (set! *profile?* #f)
+        (set! *flamegraph?* #f))))
 
 (define (profile-write! output-dir context)
 
