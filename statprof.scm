@@ -3,7 +3,7 @@
 ;;; File: "statprof.scm"
 
 ;;; Copyright (c) 2005 by Guillaume Germain, All Rights Reserved.
-;;; Copyright (c) 2020 by Marc Feeley, All Rights Reserved.
+;;; Copyright (c) 2020-2025 by Marc Feeley, All Rights Reserved.
 
 ;;;============================================================================
 
@@ -52,7 +52,7 @@
                       (file (##container->path container)))
                  (if file
                      (let* ((filepos
-                             (##position->filepos (##locat-position locat)))
+                             (##position->filepos (##locat-start-position locat)))
                             (line
                              (fx+ (##filepos-line filepos) 1)))
                        (vector file line))
