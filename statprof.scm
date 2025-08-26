@@ -35,9 +35,17 @@
   (set! *buckets* (make-table))
   (set! *table-of-frames* (make-table))
   (set! *total* 0)
-  (heartbeat-interrupt-handler-set! statprof-heartbeat!))
+  (statprof-heartbeat-enable!))
 
 (define (statprof-stop!)
+  (statprof-heartbeat-disable!))
+
+(define (statprof-heartbeat-enable!)
+  (declare (not interrupts-enabled))
+  (heartbeat-interrupt-handler-set! statprof-heartbeat!))
+
+(define (statprof-heartbeat-disable!)
+  (declare (not interrupts-enabled))
   (heartbeat-interrupt-handler-set! ##thread-heartbeat!))
 
 (define (heartbeat-interrupt-handler-set! thunk)
@@ -67,12 +75,15 @@
             (let ((creator (##continuation-creator cont)))
               (loop (##continuation-next! cont)
                     (if creator
-                        (cons (##procedure-name creator) lst)
+                        (let ((name (or (##procedure-name creator) '*noname*)))
+                          (cons name lst))
                         lst)))
             (loop (##continuation-next! cont)
                   lst)))))
 
 (define (statprof-heartbeat!)
+  (declare (not interrupts-enabled))
+  (statprof-heartbeat-disable!)
   (continuation-capture
    (lambda (cont)
      (let ((count 1))
@@ -101,6 +112,8 @@
              (table-set! *table-of-frames*
                          frames
                          (fx+ count (table-ref *table-of-frames* frames 0)))))
+
+       (statprof-heartbeat-enable!)
 
        (##thread-heartbeat!))))) ;; to allow thread context switching
 
@@ -465,6 +478,7 @@
                                 " "
                                 (number->string (cdr x))))
                (table->list *table-of-frames*)))))
+
     (call-with-output-file
         (path-expand "flamegraph.folded" output-dir)
      (lambda (port)
