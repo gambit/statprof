@@ -18,20 +18,20 @@ The profiler can also generate flamegraphs which offer a different view of the p
 
 The statprof library exports the following three procedures:
 
-(statprof-start! [&lt;kind&gt;])
+**(statprof-start! [&lt;kind&gt;])**
   -- Begin the profiling.  The optional &lt;kind&gt; parameter is a list
      indicating the kind of profiles to generate.  The list can contain
      the symbols `profile` (the default HTML profiles) and `flamegraph`
      (which requires post-processing of the data with the  script
      `flamegraph.pl` see https://github.com/brendangregg/FlameGraph).
 
-(statprof-stop!)
+**(statprof-stop!)**
   -- End the profiling
 
-(statprof-write! [&lt;profile-dir&gt;])
-  -- Write the profiling results to the directory &lt;profile-dir&gt; (relative to the initial current directory).  The default &lt;profile-dir&gt; is &lt;command-name&gt;`.statprof` for scripts and compiled programs, otherwise `statprof.statprof`. To view a profile generated with kind=`profile` open the file &lt;profile-dir&gt;`/index.html` .  The profile generated with kind=`flamegraph` is in &lt;profile-dir&gt;`/flamegraph.folded` and it should be post-processed with `flamegraph.pl` &lt;profile-dir&gt;`/flamegraph.folded` to generate a SVG viewable with a web browser.
+**(statprof-write! [&lt;profile-dir&gt;])**
+  -- Write the profiling results to the directory &lt;profile-dir&gt; (relative to the initial current directory).  The default &lt;profile-dir&gt; is &lt;command-name&gt;`.statprof` for scripts and compiled programs, otherwise `statprof.statprof`. To view a profile generated with kind=`profile` open the file &lt;profile-dir&gt;`/index.html` .  The profile generated with kind=`flamegraph` is in &lt;profile-dir&gt;`/flamegraph.folded` and it must be post-processed with `flamegraph.pl` &lt;profile-dir&gt;`/flamegraph.folded` to generate a file viewable with a web browser.
 
-See the file demo.sld for a simple demo of how to use this library.  The demo can be run with the command
+See the file `demo.sld` for a simple demo of how to use this library.  The demo can be run with the command:
 
     gsi github.com/gambit/statprof/demo
 
@@ -42,9 +42,17 @@ In addition to the main `statprof` library are two utility libraries: `github.co
     ./flamegraph.pl statprof.statprof/flamegraph.folded > statprof.statprof/flamegraph.html
     open statprof.statprof/index.html statprof.statprof/flamegraph.html
 
-This feature can also be used to profile the Gambit compiler by executing an `import` of the appropriate library from the command-line. For example the following will generate a flamegraph of the compiler compiling SRFI-1:
+This yields this statistical profile and flamegraph:
+
+<img width="527" height="174" alt="image" src="https://github.com/user-attachments/assets/0abf5144-d259-4231-9f7b-14f8f72a2db7" />
+
+<img width="1192" height="672" alt="image" src="https://github.com/user-attachments/assets/515dd818-ca44-447a-bdcd-cb1027f822e9" />
+
+This feature can also be used to profile the Gambit compiler by executing an `import` of the appropriate library from the command-line. For example the following will generate a flamegraph of the compiler compiling the srfi/1 library:
 
     gsc -c -e "(import github.com/gambit/statprof/flamegraph)" lib/srfi/1/1.scm
+
+<img width="1192" height="916" alt="image" src="https://github.com/user-attachments/assets/630fca81-6f8a-44c0-876e-fabe8fc2c064" />
 
 ## License
 
